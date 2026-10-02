@@ -126,59 +126,69 @@ async function pushAppends(path: string): Promise<void> {
     try {
       const msg = entries.length === 1 ? `Add idea to ${label(path)}` : `Add ${entries.length} ideas to ${label(path)}`;
       const sha = await gh.putFile(path, next, rec.baseSha, msg);
-      await store.putRec({ ...rec, content: next, baseContent: next, baseSha: sha, etag: undefined, dirty: false, updatedAt: Date.now() });
+      await store.mutate(path, (cur) => {
+        const c = cur ?? rec;
+        // A full edit made meanwhile stays dirty and is pushed on top of the new SHA.
+        return { ...c, content: c.dirty ? c.content : next, baseContent: next, baseSha: sha, etag: undefined, updatedAt: Date.now() };
+      });
       for (const e of entries) await db.del('appends', e.id!);
       store.emit(path);
       return;
     } catch (e) {
       if (!(e instanceof gh.ConflictError)) throw e;
       const remote = await fetchRemote(path);
-      await store.putRec({ ...rec, content: remote.content, baseContent: remote.content, baseSha: remote.sha, etag: undefined });
+      await store.mutate(path, (cur) => {
+        const c = cur ?? rec;
+        return c.dirty ? undefined : { ...c, content: remote.content, baseContent: remote.content, baseSha: remote.sha, etag: undefined };
+      });
       store.emit(path);
     }
   }
   throw new Error(`Could not append to ${label(path)} after several attempts`);
 }
 
-async function pushEdit(rec: FileRec): Promise<void> {
+async function pushEdit(rec: FileRec, depth = 0): Promise<void> {
+  const path = rec.path;
   const sent = rec.content;
+  let sha: string;
   try {
-    const sha = await gh.putFile(rec.path, sent, rec.baseSha, `Update ${label(rec.path)}`);
-    await markPushed(rec.path, sent, sha);
+    sha = await gh.putFile(path, sent, rec.baseSha, `Update ${label(path)}`);
   } catch (e) {
     if (!(e instanceof gh.ConflictError)) throw e;
-    const remote = await fetchRemote(rec.path);
-    const cur = (await store.getRec(rec.path))!;
-    if (remote.content === sent) {
+    const remote = await fetchRemote(path);
+    let retry = false;
+    await store.mutate(path, (cur) => {
+      if (!cur) return undefined;
       // Already there (e.g. our previous push landed but the response was lost).
-      await markPushed(rec.path, sent, remote.sha!);
-    } else if (remote.content === cur.baseContent) {
-      // Only the SHA moved (no content change we haven't seen): retry on the new SHA.
-      await store.putRec({ ...cur, baseSha: remote.sha });
-      await pushEdit({ ...cur, baseSha: remote.sha });
-    } else {
-      await store.putRec({ ...cur, conflict: { remoteContent: remote.content, remoteSha: remote.sha } });
-      store.emit(rec.path);
-    }
+      if (remote.content === sent) return pushed(cur, sent, remote.sha);
+      // GitHub has nothing we haven't seen, only a different SHA: retry on top of it.
+      if (remote.content === cur.baseContent && depth < 2) { retry = true; return { ...cur, baseSha: remote.sha }; }
+      return { ...cur, conflict: { remoteContent: remote.content, remoteSha: remote.sha } };
+    });
+    store.emit(path);
+    const cur = await store.getRec(path);
+    if (retry && cur) await pushEdit(cur, depth + 1);
+    return;
   }
+  await store.mutate(path, (cur) => cur && pushed(cur, sent, sha));
+  store.emit(path);
 }
 
-async function markPushed(path: string, sent: string, sha: string): Promise<void> {
-  const cur = (await store.getRec(path))!;
-  // If the user kept typing during the push, stay dirty so the newer text goes out next.
-  await store.putRec({ ...cur, baseSha: sha, baseContent: sent, etag: undefined, dirty: cur.content !== sent, updatedAt: Date.now() });
-  store.emit(path);
+/** Record a successful push. If the user kept typing meanwhile, stay dirty so the newer text goes out next. */
+function pushed(cur: FileRec, sent: string, sha: string | undefined): FileRec {
+  return { ...cur, baseSha: sha, baseContent: sent, etag: undefined, dirty: cur.content !== sent, updatedAt: Date.now() };
 }
 
 /** Resolve a conflict: keep the local text (overwrite GitHub) or take GitHub's version. */
 export async function resolveConflict(path: string, choice: 'mine' | 'theirs'): Promise<void> {
-  const rec = await store.getRec(path);
-  if (!rec?.conflict) return;
-  const { remoteContent, remoteSha } = rec.conflict;
-  const next: FileRec = choice === 'mine'
-    ? { ...rec, baseSha: remoteSha, baseContent: remoteContent, dirty: true, conflict: undefined }
-    : { ...rec, content: remoteContent, baseSha: remoteSha, baseContent: remoteContent, dirty: false, conflict: undefined };
-  await store.putRec(next);
+  const next = await store.mutate(path, (rec) => {
+    if (!rec?.conflict) return undefined;
+    const { remoteContent, remoteSha } = rec.conflict;
+    return choice === 'mine'
+      ? { ...rec, baseSha: remoteSha, baseContent: remoteContent, dirty: true, conflict: undefined }
+      : { ...rec, content: remoteContent, baseSha: remoteSha, baseContent: remoteContent, dirty: false, conflict: undefined };
+  });
+  if (!next) return;
   store.emit(path);
   if (choice === 'mine') await flushNow();
   else await recomputeStatus();
@@ -195,14 +205,18 @@ export async function refresh(path: string): Promise<boolean> {
     if (rec?.dirty || rec?.conflict) return false;
     const r = await gh.getFile(path, rec?.etag);
     if (r === 'not-modified') return false;
-    if (r === null) {
-      if (!rec) return false;
-      // Deleted on GitHub: forget our copy unless it was never pushed.
-      if (rec.baseSha) { await db.del('files', path); store.emit(path); return true; }
-      return false;
-    }
-    const changed = r.content !== rec?.content;
-    await store.putRec({ path, content: r.content, baseContent: r.content, baseSha: r.sha, etag: r.etag, dirty: false, updatedAt: Date.now() });
+    let changed = false;
+    await store.mutate(path, (cur) => {
+      // Edited locally while we were fetching: local wins, conflicts surface on push.
+      if (cur?.dirty || cur?.conflict) return undefined;
+      if (r === null) {
+        // Deleted on GitHub: forget our copy unless it was never pushed.
+        changed = !!cur?.baseSha;
+        return changed ? null : undefined;
+      }
+      changed = r.content !== cur?.content;
+      return { path, content: r.content, baseContent: r.content, baseSha: r.sha, etag: r.etag, dirty: false, updatedAt: Date.now() };
+    });
     if (changed) store.emit(path);
     return changed;
   } catch (e) {

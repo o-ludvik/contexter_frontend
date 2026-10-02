@@ -34,7 +34,8 @@ export function renderCapture(_args: string[], view: HTMLElement, opts: { initia
         onclick: () => { select(slug); ta.focus(); },
       }, slug),
     ));
-    if (!contexts.length) picker.append(h('span', { class: 'muted' }, 'No contexts yet. '), h('a', { href: '#/new' }, 'Create one'));
+    if (!contexts.length) picker.append(h('span', { class: 'muted' }, 'No contexts yet.'));
+    picker.append(h('a', { class: 'btn chip chip-new', href: '#/new', title: 'New context' }, '+ New'));
     btn.disabled = !current;
   };
 

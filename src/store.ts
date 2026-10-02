@@ -57,13 +57,45 @@ export async function read(path: string): Promise<{ content: string; rec?: FileR
   return { content: appendTo(rec?.content ?? '', mine), rec, pending: mine.length };
 }
 
-/** Save a full-file edit locally and schedule a push. */
-export async function write(path: string, content: string): Promise<void> {
+// Local edits to the same file run one at a time, so read-modify-write edits
+// (e.g. ticking a todo then adding one) can't overwrite each other.
+const queues = new Map<string, Promise<unknown>>();
+function serial<T>(path: string, task: () => Promise<T>): Promise<T> {
+  const run = (queues.get(path) ?? Promise.resolve()).then(task, task);
+  queues.set(path, run.catch(() => {}));
+  return run;
+}
+
+async function writeNow(path: string, content: string): Promise<void> {
   const rec = (await getRec(path)) ?? { path, content: '', baseContent: '', dirty: false, updatedAt: 0 };
   if (rec.content === content && rec.updatedAt) return;
   await putRec({ ...rec, content, dirty: true, updatedAt: Date.now() });
   emit(path);
   onLocalChange();
+}
+
+/** Save a full-file edit locally and schedule a push. */
+export function write(path: string, content: string): Promise<void> {
+  return serial(path, () => writeNow(path, content));
+}
+
+/** Transform the current local content of a file (pending appends included) and save it. */
+export function update(path: string, fn: (content: string) => string): Promise<void> {
+  return serial(path, async () => writeNow(path, fn((await read(path)).content)));
+}
+
+/**
+ * Read-modify-write a file record through the same per-file queue as local edits, so
+ * background sync can't overwrite a keystroke saved in between. fn returns the new record,
+ * null to delete it, or undefined to leave it unchanged. Resolves to fn's decision.
+ */
+export function mutate(path: string, fn: (cur: FileRec | undefined) => FileRec | null | undefined): Promise<FileRec | null | undefined> {
+  return serial(path, async () => {
+    const next = fn(await getRec(path));
+    if (next === null) await db.del('files', path);
+    else if (next) await putRec(next);
+    return next;
+  });
 }
 
 /** Queue an entry to append (never conflicts: it is re-applied on top of the latest remote file). */

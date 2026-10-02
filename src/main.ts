@@ -4,6 +4,9 @@ import { getToken, logout } from './auth';
 import { renderLogin } from './ui/login';
 import { renderRaw } from './ui/raw';
 import { renderCapture } from './ui/capture';
+import { renderContext } from './ui/context';
+import { renderStart, renderEnd } from './ui/session';
+import { renderNew } from './ui/newContext';
 import { mountStatus } from './ui/status';
 import * as sync from './sync';
 import { hasPendingChanges } from './store';
@@ -13,6 +16,10 @@ const lockBtn = document.getElementById('lock') as HTMLButtonElement;
 
 route('', renderCapture);
 route('raw', renderRaw);
+route('c', renderContext);
+route('start', renderStart);
+route('end', renderEnd);
+route('new', renderNew);
 
 let started = false;
 async function boot(): Promise<void> {
