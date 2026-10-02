@@ -1,35 +1,30 @@
 import './styles.css';
 import { route, startRouter, render, setEnabled } from './router';
-import { getToken, logout, expiresAt } from './auth';
+import { getToken, logout } from './auth';
 import { renderLogin } from './ui/login';
+import { renderRaw } from './ui/raw';
+import { mountStatus } from './ui/status';
+import * as sync from './sync';
+import { hasPendingChanges } from './store';
 import { h } from './dom';
-import { OWNER, REPO } from './config';
 
 const view = document.getElementById('view')!;
 const lockBtn = document.getElementById('lock') as HTMLButtonElement;
 
+// Temporary home until the capture screen (phase 5): contexts with links to their raw files.
 route('', (_args, v) => {
-  const result = h('p', { class: 'muted' }, 'Checking repo access…');
-  v.append(h('h1', {}, 'Contexter'), result);
-  // Temporary phase-3 check that the decrypted token can reach the data repo.
-  (async () => {
-    const token = await getToken();
-    const exp = await expiresAt();
-    try {
-      const res = await fetch(`https://api.github.com/repos/${OWNER}/${REPO}`, {
-        headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' },
-        cache: 'no-store',
-      });
-      result.textContent = res.ok
-        ? `Token works: ${OWNER}/${REPO} is reachable. Login expires ${new Date(exp!).toLocaleString()}.`
-        : `GitHub said HTTP ${res.status}. Check the token's repo access and permissions.`;
-    } catch {
-      result.textContent = 'Offline: could not reach GitHub.';
-    }
-  })();
+  const list = h('ul', { class: 'plain' });
+  v.append(h('h1', {}, 'Contexts'), list);
+  const show = (slugs: string[]) =>
+    list.replaceChildren(...slugs.map((slug) => h('li', {},
+      h('strong', {}, slug), ' ',
+      ...sync.CONTEXT_FILES.flatMap((f) => [h('a', { href: `#/raw/${sync.contextPath(slug, f)}` }, f), ' ']),
+    )));
+  void sync.localContexts().then(show).then(sync.refreshContexts).then(show);
 });
+route('raw', renderRaw);
 
-let routerStarted = false;
+let started = false;
 async function boot(): Promise<void> {
   if (!(await getToken())) {
     lockBtn.hidden = true;
@@ -39,11 +34,19 @@ async function boot(): Promise<void> {
   }
   lockBtn.hidden = false;
   setEnabled(true);
-  if (routerStarted) render();
-  else { routerStarted = true; startRouter(); }
+  if (started) { render(); void sync.flushNow(); return; }
+  started = true;
+  mountStatus(document.getElementById('status')!, document.getElementById('conflicts')!);
+  sync.start(async () => { await logout(); void boot(); });
+  startRouter();
 }
 
 lockBtn.addEventListener('click', async () => {
+  // Push what we can first; unsynced local data stays in IndexedDB either way.
+  await sync.flushNow();
+  if (await hasPendingChanges()) {
+    if (!confirm('Some changes are not synced yet. They stay on this device and sync after you unlock again. Lock anyway?')) return;
+  }
   await logout();
   boot();
 });

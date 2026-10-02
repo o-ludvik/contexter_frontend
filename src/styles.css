@@ -105,3 +105,15 @@ textarea { resize: vertical; }
 
 button.small { min-height: 32px; padding: 4px 10px; font-size: 0.85rem; }
 .login { max-width: 360px; margin: 10vh auto 0; }
+
+textarea.raw { min-height: 60vh; font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 15px; }
+.conflicts { max-width: 720px; margin: 12px auto 0; padding: 0 16px; }
+.conflict { border: 1px solid var(--danger); border-radius: var(--radius); padding: 12px; background: var(--surface); }
+.conflict + .conflict { margin-top: 8px; }
+.conflict p { margin: 0 0 8px; }
+.compare { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px; margin: 8px 0; }
+.compare h3 { font-size: 0.9rem; margin: 0 0 4px; }
+.compare pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 13px; padding: 8px; border: 1px solid var(--border); border-radius: 6px; max-height: 40vh; overflow: auto; }
+.status { cursor: pointer; user-select: none; }
+ul.plain { list-style: none; padding: 0; margin: 0; }
+ul.plain li { padding: 6px 0; }
