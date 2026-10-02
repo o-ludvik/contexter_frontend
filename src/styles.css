@@ -117,3 +117,14 @@ textarea.raw { min-height: 60vh; font-family: ui-monospace, 'SF Mono', Menlo, mo
 .status { cursor: pointer; user-select: none; }
 ul.plain { list-style: none; padding: 0; margin: 0; }
 ul.plain li { padding: 6px 0; }
+
+.chips { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
+.chips::-webkit-scrollbar { display: none; }
+.chip { min-height: 38px; padding: 6px 14px; border-radius: 999px; white-space: nowrap; flex: none; }
+.chip[aria-checked='true'] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+textarea.capture { font-size: 18px; min-height: 7.5em; }
+.flash { color: var(--ok); font-size: 0.9rem; }
+.links { margin-top: 16px; }
+ul.entries { list-style: none; padding: 0; margin: 0; }
+ul.entries li { padding: 8px 0; border-bottom: 1px solid var(--border); white-space: pre-wrap; word-break: break-word; }
+ul.entries time { display: block; font-size: 0.8rem; color: var(--muted); }
