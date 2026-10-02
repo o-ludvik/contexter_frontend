@@ -1,0 +1,7 @@
+node_modules/
+dist/
+*.local
+# the plain token must never be committed
+token.txt
+*.token
+.env*
