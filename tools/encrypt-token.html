@@ -84,7 +84,7 @@ $('f').addEventListener('submit', async (e) => {
   const pw = $('pw').value;
   const iter = Number($('iter').value);
   if (pw !== $('pw2').value) return say('Passwords do not match.', 'err');
-  if (pw.length < 12) return say('Password too short: use at least 12 characters.', 'err');
+  if (pw.length < 8) return say('Password too short: use at least 12 characters.', 'err');
   if (!Number.isInteger(iter) || iter < MIN_ITER) return say(`Iterations must be an integer >= ${MIN_ITER}.`, 'err');
   if (!token) return say('Token is empty.', 'err');
   if (/\s/.test(token)) return say('Token contains whitespace; check the paste.', 'err');
