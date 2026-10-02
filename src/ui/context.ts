@@ -23,6 +23,7 @@ export function renderContext([slug, tabArg]: string[], view: HTMLElement): () =
       h('div', { class: 'row' },
         h('a', { class: 'btn primary', href: `#/start/${enc}` }, 'Start session'),
         h('a', { class: 'btn', href: `#/end/${enc}` }, 'End session'),
+        h('a', { class: 'btn', href: `#/manage/${enc}`, title: 'Rename or delete' }, 'Manage'),
       ),
     ),
     h('nav', { class: 'tabs', role: 'tablist' },

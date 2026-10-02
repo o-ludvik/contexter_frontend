@@ -15,13 +15,14 @@ export class HttpError extends Error {
 export type RemoteFile = { content: string; sha: string; etag?: string };
 export type DirEntry = { name: string; path: string; type: 'file' | 'dir'; sha: string };
 
-const base = `https://api.github.com/repos/${OWNER}/${REPO}/contents/`;
+const repoBase = `https://api.github.com/repos/${OWNER}/${REPO}/`;
 const enc = (path: string) => path.split('/').map(encodeURIComponent).join('/');
 
-async function api(path: string, init: RequestInit = {}, extraHeaders: Record<string, string> = {}): Promise<Response> {
+/** Authenticated request to a URL under /repos/<owner>/<repo>/. */
+async function repoApi(sub: string, init: RequestInit = {}, extraHeaders: Record<string, string> = {}): Promise<Response> {
   const token = await getToken();
   if (!token) throw new AuthError('Not logged in');
-  const res = await fetch(base + enc(path) + (init.method === 'PUT' ? '' : `?ref=${BRANCH}`), {
+  const res = await fetch(repoBase + sub, {
     ...init,
     cache: 'no-store',
     headers: {
@@ -33,6 +34,11 @@ async function api(path: string, init: RequestInit = {}, extraHeaders: Record<st
   });
   if (res.status === 401) throw new AuthError('GitHub rejected the token (401)');
   return res;
+}
+
+/** Contents API request for a file or directory path. */
+function api(path: string, init: RequestInit = {}, extraHeaders: Record<string, string> = {}): Promise<Response> {
+  return repoApi('contents/' + enc(path) + (init.method === 'PUT' ? '' : `?ref=${BRANCH}`), init, extraHeaders);
 }
 
 async function fail(res: Response): Promise<never> {
@@ -73,4 +79,47 @@ export async function putFile(path: string, content: string, sha: string | undef
   if (res.status === 409 || res.status === 422) throw new ConflictError(`${path} changed on GitHub`);
   if (!res.ok) return fail(res);
   return (await res.json()).content.sha;
+}
+
+// ---- Git Data API: atomic multi-file changes (one commit) ----
+
+async function json<T>(res: Response): Promise<T> {
+  if (!res.ok) return fail(res);
+  return res.json();
+}
+
+const post = (sub: string, body: unknown, method = 'POST') =>
+  repoApi(sub, { method, body: JSON.stringify(body) });
+
+/**
+ * Move every file under `from/` to `to/` (or delete them when `to` is null) in a single
+ * commit. Retries if the branch moved meanwhile. Returns the moved/deleted paths
+ * with their blob SHAs.
+ */
+export async function moveDir(from: string, to: string | null, message: string): Promise<{ path: string; sha: string }[]> {
+  const prefix = from.replace(/\/?$/, '/');
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const ref = await json<{ object: { sha: string } }>(await repoApi(`git/ref/heads/${BRANCH}`));
+    const head = ref.object.sha;
+    const commit = await json<{ tree: { sha: string } }>(await repoApi(`git/commits/${head}`));
+    const tree = await json<{ tree: { path: string; mode: string; type: string; sha: string }[]; truncated: boolean }>(
+      await repoApi(`git/trees/${commit.tree.sha}?recursive=1`),
+    );
+    if (tree.truncated) throw new Error('Repository tree too large to modify in one commit');
+    const files = tree.tree.filter((e) => e.type === 'blob' && e.path.startsWith(prefix));
+    if (!files.length) throw new HttpError(404, `${from} not found on GitHub`);
+    if (to && tree.tree.some((e) => e.path.startsWith(to.replace(/\/?$/, '/')))) throw new Error(`${to} already exists on GitHub`);
+
+    const entries = files.flatMap((f) => [
+      { path: f.path, mode: f.mode, type: 'blob', sha: null },
+      ...(to ? [{ path: to.replace(/\/?$/, '/') + f.path.slice(prefix.length), mode: f.mode, type: 'blob', sha: f.sha }] : []),
+    ]);
+    const newTree = await json<{ sha: string }>(await post('git/trees', { base_tree: commit.tree.sha, tree: entries }));
+    const newCommit = await json<{ sha: string }>(await post('git/commits', { message, tree: newTree.sha, parents: [head] }));
+    const res = await post(`git/refs/heads/${BRANCH}`, { sha: newCommit.sha, force: false }, 'PATCH');
+    if (res.ok) return files.map((f) => ({ path: f.path, sha: f.sha }));
+    if (res.status !== 422 && res.status !== 409) return fail(res);
+    // Someone pushed in between (not a fast-forward): rebuild on the new head.
+  }
+  throw new Error('GitHub kept changing; try again');
 }

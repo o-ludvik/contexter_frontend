@@ -243,6 +243,11 @@ export async function refreshContexts(): Promise<string[]> {
     try {
       const dirs = (await gh.listDir('contexts')).filter((e) => e.type === 'dir').map((e) => e.name);
       await store.kvSet('contexts', dirs);
+      // Forget local copies of contexts renamed/deleted elsewhere (unless they hold unsynced edits).
+      for (const r of await store.allRecs()) {
+        const slug = r.path.match(/^contexts\/([^/]+)\//)?.[1];
+        if (slug && !dirs.includes(slug)) await store.mutate(r.path, (cur) => (cur && cur.baseSha && !cur.dirty && !cur.conflict ? null : undefined));
+      }
     } catch (e) {
       if (e instanceof gh.AuthError) onAuthLost();
     }
@@ -258,6 +263,60 @@ export async function prefetchAll(): Promise<void> {
       await refresh(contextPath(slug, f));
     }
   }
+}
+
+// ---- Rename / delete (online only, one atomic commit each) ----
+
+async function prepareStructuralChange(slug: string): Promise<FileRec[]> {
+  if (!navigator.onLine) throw new Error('You are offline. Renaming and deleting need a connection.');
+  await flushNow();
+  const prefix = `contexts/${slug}/`;
+  const recs = (await store.allRecs()).filter((r) => r.path.startsWith(prefix));
+  const pending = (await store.allAppends()).some((a) => a.path.startsWith(prefix));
+  if (pending || recs.some((r) => r.dirty || r.conflict)) {
+    throw new Error('This context has changes that are not synced yet. Sync them first (tap the status), then try again.');
+  }
+  return recs;
+}
+
+async function structural<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    if (e instanceof gh.AuthError) onAuthLost();
+    throw e;
+  }
+}
+
+export function renameContext(from: string, to: string): Promise<void> {
+  return structural(async () => {
+    const recs = await prepareStructuralChange(from);
+    if ((await refreshContexts()).includes(to)) throw new Error(`"${to}" already exists.`);
+    await gh.moveDir(`contexts/${from}`, `contexts/${to}`, `Rename context ${from} -> ${to}`);
+    // Blob SHAs don't change on a move, so local copies stay valid under the new path.
+    for (const r of recs) {
+      const path = `contexts/${to}/` + r.path.slice(`contexts/${from}/`.length);
+      await store.mutate(path, () => ({ ...r, path, etag: undefined }));
+      await store.mutate(r.path, () => null);
+      store.emit(r.path);
+      store.emit(path);
+    }
+    const list = (await store.kvGet<string[]>('contexts')) ?? [];
+    await store.kvSet('contexts', [...list.filter((c) => c !== from), to]);
+  });
+}
+
+export function deleteContext(slug: string): Promise<void> {
+  return structural(async () => {
+    const recs = await prepareStructuralChange(slug);
+    await gh.moveDir(`contexts/${slug}`, null, `Delete context ${slug}`);
+    for (const r of recs) {
+      await store.mutate(r.path, () => null);
+      store.emit(r.path);
+    }
+    const list = (await store.kvGet<string[]>('contexts')) ?? [];
+    await store.kvSet('contexts', list.filter((c) => c !== slug));
+  });
 }
 
 export function start(authLost: () => void): void {

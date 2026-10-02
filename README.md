@@ -73,5 +73,5 @@ npm run icons      # regenerate public/icons/ (no deps)
 
 - Pushing to `main` deploys via `.github/workflows/deploy.yml` (Settings → Pages → Source: GitHub Actions).
 - `tools/encrypt-token.html`: open locally to (re)create `public/auth.json` from a fine-grained token + password.
-- Routes: `#/` capture, `#/c/<ctx>[/left-off|ideas|todo]`, `#/start/<ctx>`, `#/end/<ctx>`, `#/new`, `#/raw/<path>` (plain-text editor for any file).
+- Routes: `#/` capture, `#/c/<ctx>[/left-off|ideas|todo]`, `#/start/<ctx>`, `#/end/<ctx>`, `#/new`, `#/manage/<ctx>` (rename/delete), `#/raw/<path>` (plain-text editor for any file).
 - Share target: on Android/desktop Chrome, install the app, then "Share → Contexter" pre-fills the capture box.

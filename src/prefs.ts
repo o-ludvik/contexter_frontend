@@ -9,7 +9,7 @@ function set(key: string, value: string | null): void {
   } catch { /* storage unavailable: fine */ }
 }
 
-export const lastContext = { get: () => get('lastContext'), set: (v: string) => set('lastContext', v) };
+export const lastContext = { get: () => get('lastContext'), set: (v: string) => set('lastContext', v), clear: () => set('lastContext', null) };
 export const draft = { get: () => get('draft') ?? '', set: (v: string) => set('draft', v || null) };
 
 export type Theme = 'auto' | 'light' | 'dark';

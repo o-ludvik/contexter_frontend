@@ -13,6 +13,7 @@ import { renderCapture } from './ui/capture';
 import { renderContext } from './ui/context';
 import { renderStart, renderEnd } from './ui/session';
 import { renderNew } from './ui/newContext';
+import { renderManage } from './ui/manage';
 import { mountStatus } from './ui/status';
 import * as sync from './sync';
 import { hasPendingChanges } from './store';
@@ -26,6 +27,7 @@ route('c', renderContext);
 route('start', renderStart);
 route('end', renderEnd);
 route('new', renderNew);
+route('manage', renderManage);
 
 let started = false;
 async function boot(): Promise<void> {
