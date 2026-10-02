@@ -102,3 +102,6 @@ textarea { resize: vertical; }
 .error { color: var(--danger); }
 .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .stack > * + * { margin-top: 12px; }
+
+button.small { min-height: 32px; padding: 4px 10px; font-size: 0.85rem; }
+.login { max-width: 360px; margin: 10vh auto 0; }

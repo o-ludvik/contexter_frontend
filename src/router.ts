@@ -5,6 +5,12 @@ export type Handler = (args: string[], view: HTMLElement) => void | (() => void)
 
 const routes = new Map<string, Handler>();
 let cleanup: (() => void) | void;
+let enabled = true;
+
+/** Disable while the login screen is shown so hash changes don't render app screens. */
+export function setEnabled(on: boolean): void {
+  enabled = on;
+}
 
 export function route(name: string, handler: Handler): void {
   routes.set(name, handler);
@@ -20,6 +26,7 @@ export function go(path: string): void {
 }
 
 export function render(): void {
+  if (!enabled) return;
   const view = document.getElementById('view')!;
   const { name, args } = parse();
   const handler = routes.get(name) ?? routes.get('')!;

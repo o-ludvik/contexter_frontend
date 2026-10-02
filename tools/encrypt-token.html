@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<!-- No network at all: nothing can be loaded or sent from this page. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="referrer" content="no-referrer" />
+<meta name="color-scheme" content="light dark" />
+<title>Contexter: encrypt token (local)</title>
+<style>
+  body { font: 16px/1.45 system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; }
+  label { display: block; margin-top: 1rem; font-weight: 600; }
+  input, textarea { width: 100%; box-sizing: border-box; font: inherit; padding: 8px; margin-top: 4px; }
+  textarea { font-family: ui-monospace, monospace; font-size: 13px; }
+  button { font: inherit; padding: 8px 16px; margin-top: 1rem; }
+  .hint { color: GrayText; font-size: 0.9rem; margin: 4px 0 0; }
+  .err { color: #d33; } .ok { color: #2a2; }
+  code { font-size: 0.95em; }
+</style>
+</head>
+<body>
+<h1>Encrypt GitHub token</h1>
+<p>Runs entirely in this page. Its Content Security Policy blocks all network requests, so nothing leaves your machine.
+  Produces <code>auth.json</code> for <code>contexter_frontend/public/</code>.</p>
+
+<form id="f" autocomplete="off">
+  <label for="token">Fine-grained GitHub token</label>
+  <textarea id="token" rows="2" spellcheck="false" autocomplete="off" autocapitalize="off" required></textarea>
+  <p class="hint">Only the <code>contexter_backend</code> repo, permission <em>Contents: Read and write</em>, with an expiry date. Cleared from this page after encryption.</p>
+
+  <label for="pw">Password</label>
+  <input id="pw" type="password" autocomplete="new-password" required />
+  <p class="hint">auth.json is public, so this password is all that protects the token. Use a long passphrase (at least 12 characters; 4+ random words is better).</p>
+
+  <label for="pw2">Repeat password</label>
+  <input id="pw2" type="password" autocomplete="new-password" required />
+
+  <label for="iter">PBKDF2 iterations</label>
+  <input id="iter" type="number" min="600000" step="100000" value="600000" required />
+  <p class="hint">At least 600,000. Higher is slower to brute-force but also slower to log in on your phone.</p>
+
+  <button type="submit">Encrypt</button>
+  <p id="msg" role="status"></p>
+</form>
+
+<div id="out" hidden>
+  <label for="json">auth.json</label>
+  <textarea id="json" rows="8" readonly spellcheck="false"></textarea>
+  <button type="button" id="copy">Copy</button>
+  <button type="button" id="dl">Download auth.json</button>
+  <p class="hint">Save as <code>contexter_frontend/public/auth.json</code> and commit it. Never commit the plain token.</p>
+</div>
+
+<script>
+// Keep in sync with src/crypto.ts.
+const MIN_ITER = 600000;
+const AAD = new TextEncoder().encode('contexter-v1');
+const $ = (id) => document.getElementById(id);
+
+function b64(bytes) {
+  let s = '';
+  for (const b of new Uint8Array(bytes)) s += String.fromCharCode(b);
+  return btoa(s);
+}
+function unb64(str) {
+  return Uint8Array.from(atob(str), (c) => c.charCodeAt(0));
+}
+
+async function deriveKey(password, salt, iter, usage) {
+  const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations: iter }, base, { name: 'AES-GCM', length: 256 }, false, [usage]);
+}
+
+function say(text, cls) { const m = $('msg'); m.textContent = text; m.className = cls || ''; }
+
+if (!window.crypto || !crypto.subtle) {
+  say('Web Crypto is not available here. Open this file directly in Chrome/Firefox, or via http://localhost.', 'err');
+}
+
+$('f').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const token = $('token').value.trim();
+  const pw = $('pw').value;
+  const iter = Number($('iter').value);
+  if (pw !== $('pw2').value) return say('Passwords do not match.', 'err');
+  if (pw.length < 12) return say('Password too short: use at least 12 characters.', 'err');
+  if (!Number.isInteger(iter) || iter < MIN_ITER) return say(`Iterations must be an integer >= ${MIN_ITER}.`, 'err');
+  if (!token) return say('Token is empty.', 'err');
+  if (/\s/.test(token)) return say('Token contains whitespace; check the paste.', 'err');
+
+  say('Encrypting…');
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: AAD }, await deriveKey(pw, salt, iter, 'encrypt'), new TextEncoder().encode(token));
+  const blob = { v: 1, kdf: 'PBKDF2-SHA256', iter, salt: b64(salt), iv: b64(iv), ct: b64(ct) };
+
+  // Round-trip check before handing it out.
+  const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(blob.iv), additionalData: AAD }, await deriveKey(pw, unb64(blob.salt), iter, 'decrypt'), unb64(blob.ct));
+  if (new TextDecoder().decode(pt) !== token) return say('Self-check failed, nothing produced.', 'err');
+
+  $('token').value = ''; $('pw').value = ''; $('pw2').value = '';
+  $('json').value = JSON.stringify(blob, null, 2) + '\n';
+  $('out').hidden = false;
+  const warn = token.startsWith('github_pat_') ? '' : ' Warning: this does not look like a fine-grained token (github_pat_…).';
+  say('Done. Decryption self-check passed. Token and password fields cleared.' + warn, warn ? 'err' : 'ok');
+});
+
+$('copy').addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText($('json').value); say('Copied.', 'ok'); }
+  catch { $('json').select(); say('Copy blocked; the text is selected, press Ctrl+C.', 'err'); }
+});
+
+$('dl').addEventListener('click', () => {
+  const url = URL.createObjectURL(new Blob([$('json').value], { type: 'application/json' }));
+  const a = document.createElement('a');
+  a.href = url; a.download = 'auth.json'; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
+</script>
+</body>
+</html>
