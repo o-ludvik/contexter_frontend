@@ -5,8 +5,9 @@ import * as store from '../store';
 import * as sync from '../sync';
 import { formatEntry, parseEntries } from '../ideas';
 import { lastContext, draft } from '../prefs';
+import { takeShared } from '../share';
 
-export function renderCapture(_args: string[], view: HTMLElement, opts: { initialText?: string } = {}): () => void {
+export function renderCapture(_args: string[], view: HTMLElement): () => void {
   let current = lastContext.get() ?? '';
   let contexts: string[] = current ? [current] : [];
 
@@ -15,14 +16,19 @@ export function renderCapture(_args: string[], view: HTMLElement, opts: { initia
     class: 'capture', rows: 4, placeholder: 'Dump a thought…', enterkeyhint: 'send',
     'aria-label': 'Idea', autocapitalize: 'sentences',
   });
-  ta.value = opts.initialText ?? draft.get();
+  const shared = takeShared();
+  const saved = draft.get();
+  ta.value = shared ? (saved.trim() ? `${shared}\n${saved}` : shared) : saved;
+  if (shared) draft.set(ta.value);
   const btn = h('button', { class: 'primary', type: 'submit' }, 'Add idea');
   const flash = h('span', { class: 'flash', role: 'status' });
   const recentTitle = h('h2', {});
   const recent = h('ul', { class: 'entries' });
   const links = h('div', { class: 'row links' });
 
-  const form = h('form', { class: 'stack' }, picker, ta, h('div', { class: 'row' }, btn, flash));
+  const form = h('form', { class: 'stack' },
+    shared ? h('p', { class: 'share-note' }, 'Shared from another app. Pick a context, then Add.') : null,
+    picker, ta, h('div', { class: 'row' }, btn, flash));
   view.append(form, links, recentTitle, recent);
   ta.focus();
   ta.setSelectionRange(ta.value.length, ta.value.length);

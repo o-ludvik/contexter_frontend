@@ -1,4 +1,10 @@
 import './styles.css';
+import { applyTheme, mountThemeToggle } from './theme';
+import { captureShareParams } from './share';
+
+applyTheme();
+captureShareParams();
+mountThemeToggle(document.getElementById('theme') as HTMLButtonElement);
 import { route, startRouter, render, setEnabled } from './router';
 import { getToken, logout } from './auth';
 import { renderLogin } from './ui/login';
@@ -36,6 +42,8 @@ async function boot(): Promise<void> {
   mountStatus(document.getElementById('status')!, document.getElementById('conflicts')!);
   sync.start(async () => { await logout(); void boot(); });
   startRouter();
+  // Warm the local cache for offline use (ETag requests: unchanged files cost nothing).
+  setTimeout(() => void sync.prefetchAll(), 2000);
 }
 
 lockBtn.addEventListener('click', async () => {

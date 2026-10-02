@@ -250,6 +250,16 @@ export async function refreshContexts(): Promise<string[]> {
   return localContexts();
 }
 
+/** Pull every context's files in the background so they are available offline. */
+export async function prefetchAll(): Promise<void> {
+  for (const slug of await refreshContexts()) {
+    for (const f of CONTEXT_FILES) {
+      if (!navigator.onLine) return;
+      await refresh(contextPath(slug, f));
+    }
+  }
+}
+
 export function start(authLost: () => void): void {
   onAuthLost = authLost;
   store.setLocalChangeHandler(() => schedule());

@@ -61,3 +61,17 @@ Contexts are discovered by listing `contexts/`. The app can create a new context
 
 ## Out of scope for now
 Search, tags, multiple users, rich text, notifications. Build the MVP, I'll use it for two weeks first.
+
+## Development
+
+```sh
+npm install
+npm run dev        # http://localhost:5173/contexter_frontend/ (needs public/auth.json)
+npm run build      # type-check + build to dist/
+npm run icons      # regenerate public/icons/ (no deps)
+```
+
+- Pushing to `main` deploys via `.github/workflows/deploy.yml` (Settings → Pages → Source: GitHub Actions).
+- `tools/encrypt-token.html`: open locally to (re)create `public/auth.json` from a fine-grained token + password.
+- Routes: `#/` capture, `#/c/<ctx>[/left-off|ideas|todo]`, `#/start/<ctx>`, `#/end/<ctx>`, `#/new`, `#/raw/<path>` (plain-text editor for any file).
+- Share target: on Android/desktop Chrome, install the app, then "Share → Contexter" pre-fills the capture box.

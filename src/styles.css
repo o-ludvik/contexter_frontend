@@ -16,8 +16,21 @@
   line-height: 1.45;
   -webkit-text-size-adjust: 100%;
 }
+:root[data-theme='dark'] {
+    --bg: #111318;
+    --surface: #1b1e25;
+    --text: #e6e8ec;
+    --muted: #9aa1ad;
+    --border: #2e333d;
+    --accent: #6d95f0;
+    --accent-text: #0d1117;
+    --danger: #ef6f61;
+    --ok: #4cc27f;
+    --warn: #e0a84a;
+    color-scheme: dark;
+}
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme='light']) {
     --bg: #111318;
     --surface: #1b1e25;
     --text: #e6e8ec;
@@ -38,7 +51,7 @@ body {
   min-height: 100dvh;
   background: var(--bg);
   color: var(--text);
-  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  padding: 0 env(safe-area-inset-right) 0 env(safe-area-inset-left);
 }
 
 .bar {
@@ -158,3 +171,26 @@ ul.todos li.muted { padding: 10px 0; }
 .session-actions { margin-top: 20px; }
 .field label { display: block; font-weight: 600; margin-bottom: 4px; }
 .chip-new { color: var(--muted); border-style: dashed; }
+
+/* ---- mobile polish ---- */
+button, .btn, .chip, .tabs a, ul.todos label { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+.chip { min-height: 44px; }
+button.small { min-height: 40px; }
+button.icon { min-width: 40px; padding: 4px; font-size: 1.1rem; line-height: 1; }
+.bar { padding-top: max(10px, env(safe-area-inset-top)); }
+.bar .row { flex-wrap: nowrap; }
+.status { white-space: nowrap; min-height: 40px; padding: 0 4px; }
+.share-note { margin: 0; padding: 8px 12px; border-radius: var(--radius); background: var(--surface); border: 1px dashed var(--accent); font-size: 0.9rem; }
+.sync-error { max-width: 720px; margin: 12px auto 0; padding: 0 16px; color: var(--danger); font-size: 0.9rem; }
+main { padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
+@media (max-width: 380px) {
+  main { padding: 12px; }
+  .bar { padding-left: 12px; padding-right: 12px; }
+  .brand { font-size: 0.95rem; }
+}
+@media (hover: hover) {
+  button:hover, .btn:hover { border-color: var(--accent); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .chip, button, .btn { transition: background-color 0.12s, border-color 0.12s; }
+}

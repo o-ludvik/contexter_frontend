@@ -11,3 +11,9 @@ function set(key: string, value: string | null): void {
 
 export const lastContext = { get: () => get('lastContext'), set: (v: string) => set('lastContext', v) };
 export const draft = { get: () => get('draft') ?? '', set: (v: string) => set('draft', v || null) };
+
+export type Theme = 'auto' | 'light' | 'dark';
+export const theme = {
+  get: (): Theme => (get('theme') as Theme) || 'auto',
+  set: (v: Theme) => set('theme', v === 'auto' ? null : v),
+};

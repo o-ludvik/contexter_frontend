@@ -1,7 +1,15 @@
 // Sync status pill in the header + banner for files in conflict.
 import { h } from '../dom';
-import { onStatus, flushNow, resolveConflict } from '../sync';
+import { onStatus, flushNow, resolveConflict, type SyncState, type SyncStatus } from '../sync';
 import * as store from '../store';
+
+const SHORT: Record<SyncState, (s: SyncStatus) => string> = {
+  synced: () => 'Synced',
+  local: () => 'Saved locally',
+  syncing: () => 'Syncing…',
+  offline: (s) => (/(\d+) change/.exec(s.detail) ? `Offline (${/(\d+) change/.exec(s.detail)![1]})` : 'Offline'),
+  error: (s) => (s.conflicts.length ? 'Conflict' : 'Sync error'),
+};
 
 export function mountStatus(pill: HTMLElement, banner: HTMLElement): void {
   pill.hidden = false;
@@ -12,10 +20,17 @@ export function mountStatus(pill: HTMLElement, banner: HTMLElement): void {
   pill.addEventListener('click', syncNow);
   pill.addEventListener('keydown', (e) => { if (e.key === 'Enter') syncNow(); });
 
+  const errorLine = h('p', { class: 'sync-error', role: 'alert' });
+  banner.before(errorLine);
+  errorLine.hidden = true;
+
   onStatus((s) => {
     pill.dataset.state = s.state;
-    pill.textContent = s.state === 'synced' ? 'Synced' : s.detail;
+    pill.textContent = SHORT[s.state](s);
     pill.title = s.detail + ' · tap to sync now';
+    // Errors other than conflicts get a readable line under the header (title isn't visible on phones).
+    errorLine.hidden = !(s.state === 'error' && !s.conflicts.length);
+    errorLine.textContent = errorLine.hidden ? '' : `Sync problem: ${s.detail}. Changes are safe on this device; tap the status to retry.`;
     void renderConflicts(banner, s.conflicts);
   });
 }
